@@ -1,0 +1,35 @@
+{
+  "name": "importador-temp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack -p 3001",
+    "build": "next build --turbopack",
+    "start": "next start -p 3001",
+    "lint": "next lint",
+    "setup": "npm install && echo 'Dependencias instaladas! Configure o .env.local e execute npm run dev'",
+    "demo": "npm run dev",
+    "check": "npm run build && echo 'Build OK!' || echo 'Build FALHOU!'"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.58.0",
+    "axios": "^1.12.2",
+    "cheerio": "^1.1.2",
+    "cheerio-select": "^2.1.0",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.544.0",
+    "next": "15.5.4",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "recharts": "^3.2.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/cheerio": "^0.22.35",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
