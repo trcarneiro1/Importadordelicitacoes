@@ -37,7 +37,7 @@ if (-not (Test-Path ".git")) {
     if ($status) {
         $warnings += "⚠️  Existem alterações não commitadas"
         Write-Host "   ⚠️  Alterações não commitadas" -ForegroundColor Yellow
-        Write-Host "   💡 Execute: git add . && git commit -m 'prep: deploy'" -ForegroundColor Gray
+        Write-Host "   💡 Execute: git add . ; git commit -m 'prep: deploy'" -ForegroundColor Gray
     } else {
         Write-Host "   ✅ Working tree limpo" -ForegroundColor Green
     }
@@ -209,7 +209,8 @@ $totalMB = [math]::Round($totalSize / 1MB, 2)
 Write-Host "   📦 Total (código): $totalMB MB" -ForegroundColor Cyan
 
 if ($totalMB -gt 100) {
-    $warnings += "⚠️  Projeto grande ($totalMB MB) - considere otimizar"
+    $warningMsg = "⚠️  Projeto grande (" + $totalMB + " MB) - considere otimizar"
+    $warnings += $warningMsg
     Write-Host "   ⚠️  Projeto grande - pode impactar deploy" -ForegroundColor Yellow
 } else {
     Write-Host "   ✅ Tamanho adequado" -ForegroundColor Green
@@ -251,7 +252,7 @@ Write-Host "============================================" -ForegroundColor Cyan
 if ($errors.Count -eq 0 -and $warnings.Count -eq 0) {
     Write-Host "`n✅ PROJETO PRONTO PARA DEPLOY!" -ForegroundColor Green
     Write-Host "`n🚀 Próximos passos:" -ForegroundColor Cyan
-    Write-Host "   1. git add . && git commit -m 'feat: preparar deploy'" -ForegroundColor White
+    Write-Host "   1. git add . ; git commit -m 'feat: preparar deploy'" -ForegroundColor White
     Write-Host "   2. git push origin main" -ForegroundColor White
     Write-Host "   3. Conectar repositório no Vercel (vercel.com)" -ForegroundColor White
     Write-Host "   4. Configurar variáveis de ambiente" -ForegroundColor White
