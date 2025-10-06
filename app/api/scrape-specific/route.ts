@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const totalLicitacoes = results.reduce((sum, r) => sum + r.licitacoes, 0);
+    const totalLicitacoes = results.reduce((sum, r) => sum + (r.licitacoes || 0), 0);
     const successfulScrapes = results.filter((r) => r.success).length;
 
     return NextResponse.json({
@@ -233,7 +233,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const totalLicitacoes = results.reduce((sum, r) => sum + r.licitacoes, 0);
+    const totalLicitacoes = results.reduce((sum, r) => sum + (r.licitacoes || 0), 0);
     const successfulScrapes = results.filter((r) => r.success).length;
 
     return NextResponse.json({
