@@ -85,7 +85,7 @@ export async function parseNewsFromSRE(
           html = response.data;
         }
 
-        const $ = cheerio.load(html);
+        const $ = cheerio.load(html) as any as cheerio.CheerioAPI;
         
         // Detectar estrutura (Joomla típico de SREs)
         const noticias = parseJoomlaNews($, pageUrl);
