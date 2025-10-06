@@ -31,20 +31,28 @@ interface Licitacao {
   updated_at?: string;
 }
 
-export default function LicitacaoDetalhesPage({ params }: { params: { id: string } }) {
+export default function LicitacaoDetalhesPage({ params }: { params: Promise<{ id: string }> }) {
   const [licitacao, setLicitacao] = useState<Licitacao | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [id, setId] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    fetchLicitacao();
-  }, [params.id]);
+    params.then(p => setId(p.id));
+  }, [params]);
+
+  useEffect(() => {
+    if (id) {
+      fetchLicitacao();
+    }
+  }, [id]);
 
   async function fetchLicitacao() {
+    if (!id) return;
     try {
       setLoading(true);
-      const response = await fetch(`/api/licitacoes/${params.id}`);
+      const response = await fetch(`/api/licitacoes/${id}`);
       const data = await response.json();
 
       if (data.success) {
