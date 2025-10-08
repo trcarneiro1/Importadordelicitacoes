@@ -173,15 +173,44 @@ function tryParserJoomla($: any, baseUrl: string): LicitacaoCompleta[] | null {
   const licitacoes: LicitacaoCompleta[] = [];
 
   // Joomla geralmente usa divs com classes específicas
-  $('.item-page, .article, .blog-item').each((_: any, element: any) => {
-    const $el = $(element);
-    const texto = $el.text();
+  // Seletores atualizados baseados em análise real de SREs
+  const joomlaSelectors = [
+    'article.item',           // Artigos Joomla (principal)
+    '.item',                  // Items Joomla genéricos
+    '.blog-featured .item',   // Blog featured items
+    '.item-page',             // Páginas de item
+    '.article',               // Artigos genéricos
+    '.blog-item'              // Blog items
+  ];
 
-    if (texto.match(/edital|licitação|pregão/i)) {
-      const licitacao = createLicitacaoFromElement($el, texto, baseUrl);
-      if (licitacao) licitacoes.push(licitacao);
+  // Tentar cada seletor
+  for (const selector of joomlaSelectors) {
+    const elements = $(selector);
+    
+    if (elements.length > 0) {
+      console.log(`   🔍 Found ${elements.length} items with selector: ${selector}`);
+      
+      elements.each((_: any, element: any) => {
+        const $el = $(element);
+        const texto = $el.text();
+        const titulo = $el.find('h2, h3, h4, .entry-title, [itemprop="name"]').first().text().trim();
+
+        // Buscar por padrões de licitação/edital
+        const hasKeywords = texto.match(/edital|licitação|licitacao|pregão|pregao|contratação|contratacao|processo seletivo/i);
+        
+        if (hasKeywords || titulo.match(/edital|licitação|pregão/i)) {
+          const licitacao = createLicitacaoFromElement($el, texto, baseUrl, titulo);
+          if (licitacao) {
+            console.log(`   ✅ Parsed: ${licitacao.numero_edital} - ${licitacao.objeto.substring(0, 50)}...`);
+            licitacoes.push(licitacao);
+          }
+        }
+      });
+
+      // Se encontrou licitações, retorna (não precisa testar outros seletores)
+      if (licitacoes.length > 0) break;
     }
-  });
+  }
 
   return licitacoes.length > 0 ? licitacoes : null;
 }
@@ -253,15 +282,20 @@ function tryParserGeneric($: any, baseUrl: string): LicitacaoCompleta[] {
 /**
  * Cria objeto de licitação a partir de elemento HTML
  */
-function createLicitacaoFromElement($el: any, texto: string, baseUrl: string): LicitacaoCompleta | null {
-  const numeroMatch = texto.match(/(?:Pregão|Concorrência|Convite|Tomada de Preços|Dispensa|Inexigibilidade)[:\s]*(\d+\/\d{4})/i);
+function createLicitacaoFromElement($el: any, texto: string, baseUrl: string, titulo?: string): LicitacaoCompleta | null {
+  // Se tem título, usar ele como objeto principal
+  const objeto = titulo && titulo.length > 10 ? titulo : extractObjeto($el);
   
-  if (!numeroMatch) return null;
+  // Buscar número do edital no texto ou título
+  const numeroMatch = (texto + ' ' + (titulo || '')).match(/(?:Pregão|Concorrência|Convite|Tomada de Preços|Dispensa|Inexigibilidade|Edital|Processo)[:\s#nº]*(\d+[\/\-_]\d{4})/i);
+  const numeroGenerico = (texto + ' ' + (titulo || '')).match(/(?:nº|n°|número|processo)[:\s]*(\d+[\/\-_]\d{4})/i);
+  
+  const numeroEdital = numeroMatch ? numeroMatch[0] : (numeroGenerico ? numeroGenerico[0] : 'S/N');
 
   return {
-    numero_edital: numeroMatch[0],
+    numero_edital: numeroEdital,
     modalidade: extractModalidade(texto),
-    objeto: extractObjeto($el),
+    objeto: objeto,
     valor_estimado: extractValor(texto),
     data_publicacao: extractData(texto, 'publicação'),
     data_abertura: extractData(texto, 'abertura'),
@@ -271,6 +305,7 @@ function createLicitacaoFromElement($el: any, texto: string, baseUrl: string): L
     processo: extractProcesso(texto),
     raw_data: {
       text: texto.substring(0, 1000),
+      titulo: titulo || '',
       url: baseUrl,
     },
   };

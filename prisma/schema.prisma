@@ -1,0 +1,198 @@
+// =====================================================
+// Prisma Schema - Importador de Licitações
+// Database: PostgreSQL (Supabase)
+// =====================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================
+// SUPERINTENDÊNCIAS REGIONAIS DE ENSINO (SREs)
+// =====================================================
+model sres {
+  id                Int       @id @default(autoincrement())
+  codigo            Int       @unique
+  nome              String    @db.VarChar(100)
+  municipio         String?   @db.VarChar(100)
+  url_base          String
+  url_licitacoes    String
+  urls_adicionais   String[]
+  tipo_cms          String?   @db.VarChar(50)
+  ativo             Boolean   @default(true)
+  ultima_coleta     DateTime?
+  proxima_coleta    DateTime?
+  taxa_sucesso      Float?    @db.Real
+  total_coletas     Int?      @default(0)
+  created_at        DateTime  @default(now())
+  
+  licitacoes        licitacoes[]
+  scraping_logs     scraping_logs[]
+  
+  @@index([codigo])
+  @@index([ativo])
+  @@index([proxima_coleta])
+}
+
+// =====================================================
+// LICITAÇÕES (Dados de Pregões/Editais)
+// =====================================================
+model licitacoes {
+  id                      String    @id @default(uuid()) @db.Uuid
+  
+  // ===== ORIGEM =====
+  sre_code                Int?
+  sre_source              String?   @db.VarChar(100)
+  regional                String?   @db.VarChar(100)
+  municipio               String?   @db.VarChar(100)
+  
+  // ===== DADOS BÁSICOS =====
+  numero_edital           String?   @db.VarChar(100)
+  modalidade              String?   @db.VarChar(50)
+  tipo_processo           String?   @db.VarChar(50)
+  objeto                  String?
+  valor_estimado          Decimal?  @db.Decimal(15, 2)
+  
+  // ===== DADOS DA ESCOLA (Enriquecidos por IA) =====
+  escola                  String?   @db.VarChar(200)
+  municipio_escola        String?   @db.VarChar(100)
+  
+  // ===== DATAS =====
+  data_publicacao         DateTime? @db.Date
+  data_abertura           DateTime?
+  data_limite_impugnacao  DateTime? @db.Date
+  prazo_entrega           String?   @db.VarChar(100)
+  
+  // ===== CATEGORIZAÇÃO IA =====
+  categoria_principal     String?   @db.VarChar(50)
+  categorias_secundarias  String[]
+  itens_principais        String[]
+  palavras_chave          String[]
+  
+  // ===== ENRIQUECIMENTO IA (Dados B2B) =====
+  fornecedor_tipo         String?   @db.VarChar(50)
+  contato_responsavel     String?   @db.VarChar(200)
+  contato_email           String?   @db.VarChar(200)
+  contato_telefone        String?   @db.VarChar(50)
+  
+  // ===== METADADOS IA =====
+  itens_detalhados        Json?     @db.JsonB
+  score_relevancia        Int?      @default(0)
+  resumo_executivo        String?
+  complexidade            String?   @db.VarChar(20)
+  processado_ia           Boolean   @default(false)
+  processado_ia_at        DateTime?
+  
+  // ===== DOCUMENTOS =====
+  documentos              Json?     @db.JsonB
+  links_externos          String[]
+  
+  // ===== CONTROLE =====
+  situacao                String?   @default("aberto") @db.VarChar(50)
+  raw_html                String?
+  raw_data                Json?     @db.JsonB
+  
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @default(now()) @updatedAt
+  scraped_at              DateTime?
+  
+  // ===== RELACIONAMENTOS =====
+  sre                     sres?     @relation(fields: [sre_code], references: [codigo])
+  
+  // ===== ÍNDICES =====
+  @@index([sre_code])
+  @@index([regional])
+  @@index([escola])
+  @@index([municipio_escola])
+  @@index([categoria_principal])
+  @@index([fornecedor_tipo])
+  @@index([processado_ia])
+  @@index([data_abertura(sort: Desc)])
+  @@index([data_publicacao(sort: Desc)])
+  @@index([valor_estimado])
+  @@index([score_relevancia(sort: Desc)])
+  @@index([created_at(sort: Desc)])
+}
+
+// =====================================================
+// LOGS DE SCRAPING (Auditoria)
+// =====================================================
+model scraping_logs {
+  id                    String    @id @default(uuid()) @db.Uuid
+  sre_code              Int?
+  sre_source            String?   @db.VarChar(100)
+  sre_url               String?
+  status                String?   @db.VarChar(20)
+  records_found         Int?
+  licitacoes_coletadas  Int?      @default(0)
+  error_message         String?
+  execution_time_ms     Int?
+  metadata              Json?     @db.JsonB
+  started_at            DateTime  @default(now())
+  
+  // ===== RELACIONAMENTOS =====
+  sre                   sres?     @relation(fields: [sre_code], references: [codigo])
+  
+  // ===== ÍNDICES =====
+  @@index([sre_source])
+  @@index([sre_code])
+  @@index([status])
+  @@index([started_at(sort: Desc)])
+}
+
+// =====================================================
+// NOTÍCIAS (Coleta de notícias relevantes das SREs)
+// =====================================================
+model noticias {
+  id                  String    @id @default(uuid()) @db.Uuid
+  sre_source          String?   @db.VarChar(100)
+  titulo              String?
+  conteudo            String?
+  data_publicacao     DateTime? @db.Date
+  categoria_ia        String?   @db.VarChar(50)
+  tags                String[]
+  url_original        String?
+  relevancia          Int?      @default(0)
+  processado_ia       Boolean   @default(false)
+  raw_data            Json?     @db.JsonB
+  created_at          DateTime  @default(now())
+  
+  // ===== ÍNDICES =====
+  @@index([sre_source])
+  @@index([categoria_ia])
+  @@index([data_publicacao(sort: Desc)])
+  @@index([relevancia(sort: Desc)])
+}
+
+// =====================================================
+// ALERTAS DE USUÁRIOS (B2B - Notificações para empresas)
+// =====================================================
+model user_alerts {
+  id                      String    @id @default(uuid()) @db.Uuid
+  email                   String    @db.VarChar(255)
+  nome_empresa            String?   @db.VarChar(200)
+  
+  // ===== FILTROS =====
+  sres_interesse          Int[]
+  categorias_interesse    String[]
+  palavras_chave          String[]
+  valor_minimo            Decimal?  @db.Decimal(15, 2)
+  valor_maximo            Decimal?  @db.Decimal(15, 2)
+  municipios_interesse    String[]
+  
+  // ===== PREFERÊNCIAS =====
+  frequencia              String    @default("diario") @db.VarChar(20)
+  ativo                   Boolean   @default(true)
+  ultimo_envio            DateTime?
+  
+  created_at              DateTime  @default(now())
+  
+  // ===== ÍNDICES =====
+  @@index([ativo, email])
+  @@index([frequencia])
+}

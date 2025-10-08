@@ -1,0 +1,59 @@
+name: Daily IA Enrichment
+
+on:
+  # Executa todo dia às 7:30 AM BRT (10:30 UTC)
+  schedule:
+    - cron: '30 10 * * *'
+  
+  # Permite executar manualmente
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Number of licitacoes to process'
+        required: false
+        default: '100'
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Process licitacoes with IA
+        run: |
+          LIMIT=${{ github.event.inputs.limit || '100' }}
+          
+          curl -X POST "${{ secrets.VERCEL_URL }}/api/process-ia" \
+            -H "Content-Type: application/json" \
+            -d "{\"limit\": $LIMIT}" \
+            --max-time 600 \
+            --retry 3 \
+            --retry-delay 5
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+      - name: Get statistics
+        run: |
+          curl "${{ secrets.VERCEL_URL }}/api/process-ia?action=stats"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "IA enrichment failed! Check logs."
+          # Adicione integração com Discord/Slack aqui se necessário
