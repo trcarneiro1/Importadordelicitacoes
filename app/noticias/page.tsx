@@ -1,11 +1,24 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Search, Filter, RefreshCw, TrendingUp, AlertCircle, 
   Calendar, Tag, MapPin, FileText, BarChart3, PieChart,
   ArrowUp, ArrowDown, Clock, Star, ExternalLink
 } from 'lucide-react';
+import NoticiasPersonalizadas from '../components/NoticiasPersonalizadas';
+
+type NoticiaEntidades = {
+  datas_importantes?: string[];
+  valores_financeiros?: string[];
+  pessoas?: string[];
+  instituicoes?: string[];
+  locais?: string[];
+  processos?: string[];
+  [key: string]: string[] | undefined;
+};
+
+type NoticiaDocumento = Record<string, unknown>;
 
 interface Noticia {
   id: string;
@@ -18,14 +31,14 @@ interface Noticia {
   categoria_ia: string;
   subcategoria_ia?: string;
   tags_ia?: string[];
-  entidades_extraidas?: any;
+  entidades_extraidas?: NoticiaEntidades;
   sentimento?: 'positivo' | 'neutro' | 'negativo';
   prioridade?: 'alta' | 'media' | 'baixa';
   relevancia_score?: number;
   resumo_ia?: string;
   palavras_chave_ia?: string[];
   acoes_recomendadas?: string[];
-  documentos?: any[];
+  documentos?: NoticiaDocumento[];
   data_publicacao?: string;
   data_coleta?: string;
 }
@@ -37,6 +50,12 @@ interface Stats {
   baixa_prioridade: number;
   por_categoria: Record<string, number>;
   por_sre: Record<string, number>;
+}
+
+interface NoticiasResponse {
+  success: boolean;
+  noticias: Noticia[];
+  stats: Stats;
 }
 
 export default function NoticiasPage() {
@@ -52,34 +71,24 @@ export default function NoticiasPage() {
   const [sreFilter, setSreFilter] = useState('todas');
   const [showFilters, setShowFilters] = useState(false);
 
-  // Carregar dados
-  useEffect(() => {
-    loadNoticias();
-  }, []);
-
-  // Aplicar filtros
-  useEffect(() => {
-    applyFilters();
-  }, [searchTerm, categoriaFilter, prioridadeFilter, sreFilter, noticias]);
-
-  const loadNoticias = async () => {
+  const loadNoticias = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch('/api/noticias');
-      const data = await response.json();
+      const data: NoticiasResponse = await response.json();
       
       if (data.success) {
         setNoticias(data.noticias);
         setStats(data.stats);
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Erro ao carregar notícias:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const applyFilters = () => {
+  const applyFilters = useCallback(() => {
     let filtered = [...noticias];
 
     // Filtro de busca
@@ -108,7 +117,15 @@ export default function NoticiasPage() {
     }
 
     setNoticiasFiltered(filtered);
-  };
+  }, [noticias, searchTerm, categoriaFilter, prioridadeFilter, sreFilter]);
+
+  useEffect(() => {
+    loadNoticias();
+  }, [loadNoticias]);
+
+  useEffect(() => {
+    applyFilters();
+  }, [applyFilters]);
 
   const getPrioridadeBadge = (prioridade?: string) => {
     switch (prioridade) {
@@ -408,6 +425,9 @@ export default function NoticiasPage() {
             </div>
           </div>
         )}
+
+        {/* Seção de Notícias Personalizadas */}
+        <NoticiasPersonalizadas />
 
         {/* Resultados */}
         <div className="bg-white rounded-lg shadow-md p-6">

@@ -69,12 +69,30 @@ export async function updateSREStatus(
   });
 }
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+interface LicitacaoData {
+  sre_source?: string;
+  sre_code?: number;
+  regional?: string;
+  numero_edital?: string;
+  modalidade?: string;
+  objeto?: string;
+  valor_estimado?: number | null;
+  data_publicacao?: Date | string | null;
+  data_abertura?: Date | string | null;
+  situacao?: string;
+  documentos?: JsonValue;
+  raw_data?: Record<string, JsonValue>;
+  raw_html?: string | null;
+}
+
 /**
  * Salva múltiplas licitações (bulk insert)
  */
-export async function saveLicitacoes(licitacoes: any[]) {
+export async function saveLicitacoes(licitacoes: LicitacaoData[]) {
   return prisma.licitacoes.createMany({
-    data: licitacoes,
+    data: licitacoes as Parameters<typeof prisma.licitacoes.createMany>[0]['data'],
     skipDuplicates: true
   });
 }

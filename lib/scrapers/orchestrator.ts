@@ -39,6 +39,14 @@ interface ScrapingResult {
   urls_scraped: number;
 }
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+interface LicitacaoDocumento {
+  nome: string;
+  url: string;
+  tipo?: string;
+}
+
 interface Licitacao {
   sre_source?: string;
   sre_code?: number;
@@ -50,8 +58,8 @@ interface Licitacao {
   data_publicacao?: Date;
   data_abertura?: Date;
   situacao?: string;
-  documentos?: any;
-  raw_data?: any;
+  documentos?: LicitacaoDocumento[];
+  raw_data?: Record<string, JsonValue>;
 }
 
 // ===== DATABASE OPERATIONS =====

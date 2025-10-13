@@ -21,7 +21,7 @@ interface OpenRouterResponse {
   };
 }
 
-interface AnaliseIA {
+export interface AnaliseIA {
   categoria: string;
   subcategoria?: string;
   tags: string[];
@@ -42,7 +42,7 @@ interface AnaliseIA {
   justificativa?: string;
 }
 
-interface AnaliseSalva extends AnaliseIA {
+export interface AnaliseSalva extends AnaliseIA {
   modelo: string;
   tokens_prompt: number;
   tokens_completion: number;

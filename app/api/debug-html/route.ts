@@ -7,6 +7,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 
+type PotentialContainer = {
+  selector: string;
+  count: number;
+  sample_html?: string;
+  sample_text: string;
+};
+
+type DebugHtmlAnalysis = {
+  url: string;
+  html_length: number;
+  title: string;
+  joomla_articles: number;
+  joomla_items: number;
+  article_tags: number;
+  tables: number;
+  lists: number;
+  divs_with_class: number;
+  pdf_links: number;
+  doc_links: number;
+  external_links: number;
+  h1_titles: string[];
+  h2_titles: string[];
+  potential_containers: PotentialContainer[];
+};
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -35,10 +60,10 @@ export async function GET(request: NextRequest) {
     }
 
     const html = await response.text();
-    const $ = cheerio.load(html) as any as cheerio.CheerioAPI;
+    const $ = cheerio.load(html);
 
     // Analyze structure
-    const analysis = {
+    const analysis: DebugHtmlAnalysis = {
       url,
       html_length: html.length,
       title: $('title').text().trim(),
@@ -83,7 +108,7 @@ export async function GET(request: NextRequest) {
       const count = $(selector).length;
       if (count > 0) {
         const sample = $(selector).first();
-        (analysis.potential_containers as any).push({
+        analysis.potential_containers.push({
           selector,
           count,
           sample_html: sample.html()?.substring(0, 500),
@@ -111,10 +136,11 @@ export async function GET(request: NextRequest) {
       }
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Debug HTML error:', error);
     return NextResponse.json({
-      error: error.message
+      error: message
     }, { status: 500 });
   }
 }

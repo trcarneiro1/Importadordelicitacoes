@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { 
   ArrowLeft, Calendar, MapPin, FileText, Tag, ExternalLink,
   AlertCircle, Clock, Star, TrendingUp, Download, Link2,
-  Brain, Sparkles, Target, CheckCircle, AlertTriangle
+  Brain, Sparkles, Target, CheckCircle
 } from 'lucide-react';
 
 interface Noticia {
@@ -41,30 +41,38 @@ interface Noticia {
 }
 
 export default function NoticiaDetalhesPage() {
-  const params = useParams();
+  const params = useParams<{ id: string }>();
+  const noticiaId = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
   const [noticia, setNoticia] = useState<Noticia | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadNoticia();
-  }, [params.id]);
-
-  const loadNoticia = async () => {
+  const loadNoticia = useCallback(async () => {
+    if (!noticiaId) {
+      setNoticia(null);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const response = await fetch(`/api/noticias/${params.id}`);
-      const data = await response.json();
+      const response = await fetch(`/api/noticias/${noticiaId}`);
+      const data: { success: boolean; noticia?: Noticia } = await response.json();
       
-      if (data.success) {
+      if (data.success && data.noticia) {
         setNoticia(data.noticia);
+      } else {
+        setNoticia(null);
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Erro ao carregar notícia:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [noticiaId]);
+
+  useEffect(() => {
+    loadNoticia();
+  }, [loadNoticia]);
 
   const getPrioridadeBadge = (prioridade?: string) => {
     switch (prioridade) {

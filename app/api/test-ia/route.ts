@@ -9,6 +9,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma/client';
 import { enrichLicitacao, saveLicitacaoEnriquecida } from '@/lib/agents/enrichment-agent';
 
+type EnrichmentInput = Parameters<typeof enrichLicitacao>[0];
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -43,7 +45,18 @@ export async function GET(request: NextRequest) {
 
     // Enriquecer
     const startTime = Date.now();
-    const enrichedData = await enrichLicitacao(licitacao as any);
+    const licitacaoForEnrichment: EnrichmentInput = {
+      id: licitacao.id,
+      objeto: licitacao.objeto,
+      raw_data: licitacao.raw_data,
+      numero_edital: licitacao.numero_edital,
+      modalidade: licitacao.modalidade,
+      regional: licitacao.regional,
+      sre_source: licitacao.sre_source,
+      created_at: licitacao.created_at ?? new Date(),
+    };
+
+    const enrichedData = await enrichLicitacao(licitacaoForEnrichment);
     const duration = Date.now() - startTime;
 
     // Salvar
@@ -61,13 +74,15 @@ export async function GET(request: NextRequest) {
       enriched: enrichedData
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const stack = error instanceof Error ? error.stack : undefined;
     console.error('[API] Error testing IA:', error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        error: message,
+        stack: process.env.NODE_ENV === 'development' ? stack : undefined
       },
       { status: 500 }
     );

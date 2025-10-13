@@ -4,8 +4,9 @@
 // Integração inteligente com cache e fallback
 // ===============================================
 
-import { openRouterClient } from './openrouter-client';
-import { categorizarNoticias } from './categorizer';
+import { openRouterClient, type AnaliseSalva } from './openrouter-client';
+import { categorizarNoticias, type NoticiaCategorizada as LocalNoticiaCategorizada } from './categorizer';
+import type { Noticia } from '../scrapers/news-parser';
 import { supabase } from '../supabase/client';
 
 interface NoticiaParaCategorizar {
@@ -28,8 +29,8 @@ interface NoticiaCategorizada {
   resumo?: string;
   raw_html?: string;
   categoria_original?: string;
-  documentos?: any[];
-  links_externos?: string[];
+  documentos?: Noticia['documentos'];
+  links_externos?: Noticia['links_externos'];
   categoria_ia: string;
   subcategoria_ia?: string;
   tags_ia: string[];
@@ -61,6 +62,23 @@ interface MetricasCategorizacao {
   tempo_total_ms: number;
   taxa_cache: number;
 }
+
+interface AnaliseCacheRecord {
+  analise: {
+    categoria: string;
+    subcategoria?: string;
+    tags: string[];
+    entidades: LocalNoticiaCategorizada['entidades'];
+    sentimento: string;
+    prioridade: string;
+    relevancia: number;
+    resumo: string;
+    palavras_chave: string[];
+    acoes_recomendadas: string[];
+  };
+}
+
+type AnaliseParaPersistir = AnaliseSalva;
 
 export class CategorizadorHibrido {
   private metricas: MetricasCategorizacao = {

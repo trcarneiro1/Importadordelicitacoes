@@ -196,3 +196,39 @@ model user_alerts {
   @@index([ativo, email])
   @@index([frequencia])
 }
+
+// =====================================================
+// ATIVIDADE DE USUÁRIOS (Rastreamento de Comportamento)
+// =====================================================
+model user_activity {
+  id                      String    @id @default(uuid()) @db.Uuid
+  
+  // ===== IDENTIFICAÇÃO DO USUÁRIO =====
+  user_id                 String?   @db.VarChar(255)  // IP ou session ID
+  session_id              String?   @db.VarChar(100)
+  
+  // ===== DADOS DO ACESSO =====
+  tipo_acesso             String    @db.VarChar(50)   // 'licitacao', 'noticia', 'dashboard'
+  recurso_id              String?   @db.Uuid          // ID da licitação ou notícia acessada
+  
+  // ===== CONTEXTO =====
+  pagina_url              String?   @db.VarChar(500)
+  categoria_acessada      String?   @db.VarChar(100)
+  sre_acessada            String?   @db.VarChar(100)
+  valor_licitacao         Decimal?  @db.Decimal(15, 2)
+  
+  // ===== METADADOS =====
+  tempo_permanencia_seg   Int?                        // Tempo na página em segundos
+  origem                  String?   @db.VarChar(200)  // Referrer
+  user_agent              String?   @db.VarChar(500)
+  
+  // ===== TIMESTAMP =====
+  accessed_at             DateTime  @default(now())
+  
+  // ===== ÍNDICES =====
+  @@index([user_id, accessed_at(sort: Desc)])
+  @@index([session_id])
+  @@index([tipo_acesso, accessed_at(sort: Desc)])
+  @@index([categoria_acessada])
+  @@index([sre_acessada])
+}

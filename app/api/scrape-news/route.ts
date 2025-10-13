@@ -5,6 +5,33 @@ import { parseNewsFromSRE } from '@/lib/scrapers/news-parser';
 import { categorizarNoticiasComIA } from '@/lib/ai/categorizer-hybrid';
 import { supabaseAdmin } from '@/lib/supabase/client';
 
+type SreProcessingResult = {
+  sre: string;
+  success: boolean;
+  noticias_coletadas?: number;
+  noticias_categorizadas?: number;
+  noticias_salvas?: number;
+  categorias?: Record<string, number>;
+  prioridades?: Record<string, number>;
+  metricas_ia?: {
+    via_openrouter: number;
+    via_cache: number;
+    via_nlp_local: number;
+    tokens_totais: number;
+    custo_total_usd: number;
+    modelo_usado: string;
+    taxa_cache: number;
+  };
+  tempo_processamento_ms?: number;
+  error?: string;
+};
+
+const parsePositiveInteger = (value: string | null, fallback: number): number => {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 export const maxDuration = 300; // 5 minutos
 export const dynamic = 'force-dynamic';
 
@@ -25,9 +52,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const count = parseInt(searchParams.get('count') || '5');
+  const count = parsePositiveInteger(searchParams.get('count'), 5);
     const specificSRE = searchParams.get('sre');
-    const pagesPerSRE = parseInt(searchParams.get('pages') || '3');
+  const pagesPerSRE = parsePositiveInteger(searchParams.get('pages'), 3);
     const modelo = searchParams.get('modelo') || undefined;
     const forcarLocal = searchParams.get('forcar_local') === 'true';
 
@@ -63,7 +90,7 @@ export async function GET(request: NextRequest) {
 
     console.log(`\n📍 ${targetSREs.length} SREs selecionadas para coleta\n`);
 
-    const results = [];
+  const results: SreProcessingResult[] = [];
     let totalNoticias = 0;
     let totalCategorizadas = 0;
     let totalSalvas = 0;
@@ -93,19 +120,34 @@ export async function GET(request: NextRequest) {
         console.log(`   🤖 Categorizando com IA...`);
         
         // Mapear notícias adicionando sre_source e convertendo data
-        const noticiasComSRE = parseResult.noticias.map(n => ({
-          ...n,
+        const noticiasParaCategorizar = parseResult.noticias.map((noticia) => ({
+          titulo: noticia.titulo,
+          conteudo: noticia.conteudo,
           sre_source: sreName,
-          data_publicacao: n.data_publicacao?.toISOString().split('T')[0],
+          data_publicacao: noticia.data_publicacao?.toISOString().split('T')[0],
+          link: noticia.url,
         }));
-        
-        const categorizacaoResult = await categorizarNoticiasComIA(noticiasComSRE as any, {
+
+        const categorizacaoResult = await categorizarNoticiasComIA(noticiasParaCategorizar, {
           modelo,
           forcarNLPLocal: forcarLocal,
         });
 
-        totalCategorizadas += categorizacaoResult.noticias.length;
-        console.log(`   ✅ ${categorizacaoResult.noticias.length} notícias categorizadas`);
+        const noticiasCategorizadas = categorizacaoResult.noticias.map((noticia, index) => {
+          const original = parseResult.noticias[index];
+          return {
+            ...noticia,
+            resumo: original?.resumo ?? noticia.resumo,
+            raw_html: original?.raw_html ?? noticia.raw_html,
+            documentos: original?.documentos ?? noticia.documentos,
+            links_externos: original?.links_externos ?? noticia.links_externos,
+            categoria_original: original?.categoria_original ?? noticia.categoria_original,
+            url: original?.url ?? noticia.url,
+          };
+        });
+
+        totalCategorizadas += noticiasCategorizadas.length;
+        console.log(`   ✅ ${noticiasCategorizadas.length} notícias categorizadas`);
         console.log(`   📊 Métricas IA: ${categorizacaoResult.metricas.via_openrouter} OpenRouter, ${categorizacaoResult.metricas.via_cache} cache, ${categorizacaoResult.metricas.via_nlp_local} local`);
         
         if (categorizacaoResult.metricas.tokens_totais > 0) {
@@ -115,7 +157,7 @@ export async function GET(request: NextRequest) {
         // 3. SALVAR NO BANCO - Inserir notícias categorizadas
         console.log(`   💾 Salvando no banco de dados...`);
         
-        for (const noticia of categorizacaoResult.noticias) {
+        for (const noticia of noticiasCategorizadas) {
           try {
             const { data, error } = await supabaseAdmin
               .from('noticias')
@@ -152,9 +194,10 @@ export async function GET(request: NextRequest) {
             } else {
               totalSalvas++;
             }
-          } catch (saveError: any) {
-            console.error(`   ❌ Exceção ao salvar: ${saveError.message}`);
-            errors.push(`${sreName}: ${saveError.message}`);
+          } catch (saveError: unknown) {
+            const message = saveError instanceof Error ? saveError.message : 'Erro desconhecido';
+            console.error(`   ❌ Exceção ao salvar: ${message}`);
+            errors.push(`${sreName}: ${message}`);
           }
         }
 
@@ -164,7 +207,7 @@ export async function GET(request: NextRequest) {
         // Calcular estatísticas por categoria e prioridade
         const categorias: Record<string, number> = {};
         const prioridades: Record<string, number> = {};
-        categorizacaoResult.noticias.forEach(n => {
+        noticiasCategorizadas.forEach((n) => {
           categorias[n.categoria_ia] = (categorias[n.categoria_ia] || 0) + 1;
           if (n.prioridade) {
             prioridades[n.prioridade] = (prioridades[n.prioridade] || 0) + 1;
@@ -175,7 +218,7 @@ export async function GET(request: NextRequest) {
           sre: sreName,
           success: true,
           noticias_coletadas: parseResult.noticias.length,
-          noticias_categorizadas: categorizacaoResult.noticias.length,
+          noticias_categorizadas: noticiasCategorizadas.length,
           noticias_salvas: totalSalvas,
           categorias,
           prioridades,
@@ -191,14 +234,15 @@ export async function GET(request: NextRequest) {
           tempo_processamento_ms: categorizacaoResult.metricas.tempo_total_ms,
         });
 
-      } catch (sreError: any) {
-        console.error(`   ❌ Erro ao processar ${sreName}:`, sreError.message);
-        errors.push(`${sreName}: ${sreError.message}`);
+      } catch (sreError: unknown) {
+        const message = sreError instanceof Error ? sreError.message : 'Erro desconhecido';
+        console.error(`   ❌ Erro ao processar ${sreName}:`, message);
+        errors.push(`${sreName}: ${message}`);
         
         results.push({
           sre: sreName,
           success: false,
-          error: sreError.message,
+          error: message,
         });
       }
 
@@ -228,15 +272,15 @@ export async function GET(request: NextRequest) {
     const categoriasCombinadas: Record<string, number> = {};
     const prioridadesCombinadas: Record<string, number> = {};
 
-    results.forEach(result => {
+    results.forEach((result) => {
       if (result.success && result.categorias) {
         Object.entries(result.categorias).forEach(([cat, count]) => {
-          categoriasCombinadas[cat] = (categoriasCombinadas[cat] || 0) + (count as number);
+          categoriasCombinadas[cat] = (categoriasCombinadas[cat] || 0) + count;
         });
       }
       if (result.success && result.prioridades) {
         Object.entries(result.prioridades).forEach(([prior, count]) => {
-          prioridadesCombinadas[prior] = (prioridadesCombinadas[prior] || 0) + (count as number);
+          prioridadesCombinadas[prior] = (prioridadesCombinadas[prior] || 0) + count;
         });
       }
     });
@@ -259,13 +303,15 @@ export async function GET(request: NextRequest) {
       erros: errors.length > 0 ? errors : undefined,
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    const stack = error instanceof Error ? error.stack : undefined;
     console.error('❌ Erro crítico:', error);
     
     return NextResponse.json({
       success: false,
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      error: message,
+      stack: process.env.NODE_ENV === 'development' ? stack : undefined,
     }, { status: 500 });
   }
 }
@@ -283,7 +329,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({} as { sres?: string[]; pages?: number }));
     const { sres, pages = 3 } = body;
 
     if (!sres || !Array.isArray(sres) || sres.length === 0) {
@@ -324,10 +370,11 @@ export async function POST(request: NextRequest) {
 
     return GET(getRequest);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
     return NextResponse.json({
       success: false,
-      error: error.message,
+      error: message,
     }, { status: 500 });
   }
 }

@@ -45,10 +45,11 @@ export async function GET(
       success: true,
       licitacao: data,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
     console.error('Erro no endpoint:', error);
     return NextResponse.json(
-      { error: error.message },
+      { error: message },
       { status: 500 }
     );
   }

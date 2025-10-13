@@ -16,11 +16,25 @@ import {
   getEnrichmentStats
 } from '@/lib/agents/enrichment-agent';
 
+type ProcessIaBody = {
+  limit?: number;
+};
+
+type PendingLicitacao = Awaited<ReturnType<typeof getLicitacoesPendentes>>[number];
+
+type PendingLicitacaoSummary = {
+  id: string;
+  numero_edital: string | null;
+  objeto: string | null;
+  sre_source: string | null;
+  created_at: Date;
+};
+
 // POST: Processar licitações pendentes
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => ({}));
-    const limit = body.limit || 50;
+    const body = (await request.json().catch(() => ({}))) as ProcessIaBody;
+    const limit = typeof body.limit === 'number' && body.limit > 0 ? body.limit : 50;
 
     console.log(`[API] Processing ${limit} licitacoes with IA...`);
 
@@ -40,12 +54,13 @@ export async function POST(request: NextRequest) {
       results: result.results
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[API] Error processing licitacoes:', error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message
+        error: message
       },
       { status: 500 }
     );
@@ -74,21 +89,31 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       total: pendentes.length,
-      licitacoes: pendentes.map((l: any) => ({
-        id: l.id,
-        numero_edital: l.numero_edital,
-        objeto: l.objeto?.substring(0, 100) + (l.objeto && l.objeto.length > 100 ? '...' : ''),
-        sre_source: l.sre_source,
-        created_at: l.created_at
-      }))
+      licitacoes: pendentes.map((l: PendingLicitacao) => {
+        const resumoObjeto = l.objeto || null;
+        const objetoFormatado = resumoObjeto
+          ? resumoObjeto.substring(0, 100) + (resumoObjeto.length > 100 ? '...' : '')
+          : null;
+
+        const base: PendingLicitacaoSummary = {
+          id: l.id,
+          numero_edital: l.numero_edital,
+          objeto: objetoFormatado,
+          sre_source: l.sre_source,
+          created_at: l.created_at
+        };
+
+        return base;
+      })
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[API] Error fetching data:', error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message
+        error: message
       },
       { status: 500 }
     );

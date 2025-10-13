@@ -7,6 +7,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { testScrapeSRE, scrapeMultipleSREs } from '@/lib/scrapers/orchestrator';
 
+type OrchestratorResult = Awaited<ReturnType<typeof scrapeMultipleSREs>>[number];
+
+const parseSRECode = (value: string): number | null => {
+  const parsed = Number(value.trim());
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 47) {
+    return null;
+  }
+  return parsed;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -21,7 +31,16 @@ export async function GET(request: NextRequest) {
 
     // Check if multiple SREs
     if (sreParam.includes(',')) {
-      const codes = sreParam.split(',').map(s => parseInt(s.trim()));
+      const codes = sreParam
+        .split(',')
+        .map((value) => parseSRECode(value))
+        .filter((value): value is number => value !== null);
+
+      if (codes.length === 0) {
+        return NextResponse.json({
+          error: 'Provide at least one valid SRE code between 1 and 47.'
+        }, { status: 400 });
+      }
       
       console.log(`🧪 Testing ${codes.length} SREs: ${codes.join(', ')}`);
       const results = await scrapeMultipleSREs(codes);
@@ -29,7 +48,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         sres_tested: codes.length,
-        results: results.map(r => ({
+  results: results.map((r: OrchestratorResult) => ({
           sre_code: r.sre_code,
           sre_name: r.sre_name,
           success: r.success,
@@ -41,9 +60,9 @@ export async function GET(request: NextRequest) {
       });
 
     } else {
-      const sreCode = parseInt(sreParam);
-      
-      if (isNaN(sreCode) || sreCode < 1 || sreCode > 47) {
+      const sreCode = parseSRECode(sreParam);
+
+      if (sreCode === null) {
         return NextResponse.json({
           error: 'Invalid SRE code. Must be between 1 and 47.'
         }, { status: 400 });
@@ -72,10 +91,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Test scraper error:', error);
     return NextResponse.json({
-      error: error.message
+      error: message
     }, { status: 500 });
   }
 }

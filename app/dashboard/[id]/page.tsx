@@ -1,8 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Calendar, DollarSign, FileText, Globe, Tag, AlertCircle, Download, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Calendar, FileText, Globe, Tag, AlertCircle, Download, ExternalLink } from 'lucide-react';
+
+type LicitacaoDocumento = {
+  nome: string;
+  url: string;
+  tipo: string;
+};
+
+type LicitacaoContato = {
+  responsavel?: string;
+  email?: string;
+  telefone?: string;
+};
+
+type RawLicitacaoData = Record<string, unknown>;
 
 interface Licitacao {
   id: string;
@@ -16,56 +30,60 @@ interface Licitacao {
   situacao: string;
   categoria?: string;
   processo?: string;
-  documentos?: Array<{
-    nome: string;
-    url: string;
-    tipo: string;
-  }>;
-  contato?: {
-    responsavel?: string;
-    email?: string;
-    telefone?: string;
-  };
-  raw_data?: any;
+  documentos?: LicitacaoDocumento[];
+  contato?: LicitacaoContato;
+  raw_data?: RawLicitacaoData;
   created_at: string;
   updated_at?: string;
 }
 
+type LicitacaoResponse = {
+  success: boolean;
+  licitacao?: Licitacao;
+  error?: string;
+};
+
 export default function LicitacaoDetalhesPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const [licitacao, setLicitacao] = useState<Licitacao | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [id, setId] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    params.then(p => setId(p.id));
-  }, [params]);
+    let isMounted = true;
 
-  useEffect(() => {
-    if (id) {
-      fetchLicitacao();
-    }
-  }, [id]);
+    const fetchLicitacao = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(`/api/licitacoes/${id}`);
+        const data: LicitacaoResponse = await response.json();
 
-  async function fetchLicitacao() {
-    if (!id) return;
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/licitacoes/${id}`);
-      const data = await response.json();
+        if (!isMounted) return;
 
-      if (data.success) {
-        setLicitacao(data.licitacao);
-      } else {
-        setError(data.error || 'Erro ao carregar licitação');
+        if (data.success && data.licitacao) {
+          setLicitacao(data.licitacao);
+          setError(null);
+        } else {
+          setError(data.error ?? 'Erro ao carregar licitação');
+        }
+      } catch (err: unknown) {
+        if (!isMounted) return;
+        const message = err instanceof Error ? err.message : 'Erro ao conectar com a API';
+        setError(message);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
-    } catch (err: any) {
-      setError(err.message || 'Erro ao conectar com a API');
-    } finally {
-      setLoading(false);
-    }
-  }
+    };
+
+    fetchLicitacao();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
 
   if (loading) {
     return (

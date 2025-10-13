@@ -1,22 +1,132 @@
 import { supabaseAdmin } from './client';
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+export interface LicitacaoContato {
+  responsavel?: string;
+  email?: string;
+  telefone?: string;
+}
+
+export interface LicitacaoDocumento {
+  nome: string;
+  url: string;
+  tipo?: string;
+}
+
+export type RawLicitacaoData = {
+  html?: string;
+  [key: string]: JsonValue | undefined;
+};
+
 export interface Licitacao {
   id?: string;
+  sre_code?: number;
   sre_source: string;
+  regional?: string;
+  municipio?: string;
   numero_edital?: string;
   modalidade?: string;
   objeto?: string;
-  valor_estimado?: number;
-  data_publicacao?: Date;
-  data_abertura?: Date;
+  valor_estimado?: number | null;
+  data_publicacao?: Date | string | null;
+  data_abertura?: Date | string | null;
+  data_limite_impugnacao?: Date | string | null;
+  prazo_entrega?: string | null;
   situacao?: string;
-  documentos?: any[];
-  raw_data?: any;
-  categoria?: string;
-  processo?: string;
-  contato?: any;
+  documentos?: LicitacaoDocumento[];
+  raw_html?: string | null;
+  raw_data?: RawLicitacaoData | null;
+  categoria?: string | null;
+  categoria_principal?: string | null;
+  categorias_secundarias?: string[];
+  processo?: string | null;
+  tipo_processo?: string | null;
+  contato?: LicitacaoContato | null;
+  contato_responsavel?: string | null;
+  contato_email?: string | null;
+  contato_telefone?: string | null;
+  links_externos?: string[];
+  palavras_chave?: string[];
+  itens_principais?: string[];
+  escola?: string | null;
+  municipio_escola?: string | null;
+  fornecedor_tipo?: string | null;
+  score_relevancia?: number | null;
+  resumo_executivo?: string | null;
+  complexidade?: string | null;
+  itens_detalhados?: JsonValue;
+  scraped_at?: Date | string | null;
   created_at?: Date;
   updated_at?: Date;
+}
+
+function toDateString(value?: Date | string | null): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  return value.toISOString().split('T')[0];
+}
+
+function toTimestampString(value?: Date | string | null): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  return value.toISOString();
+}
+
+function normalizeValor(value?: number | null): number | null {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+function mapLicitacaoForInsert(licitacao: Licitacao): Record<string, unknown> {
+  const {
+    categoria,
+    categoria_principal,
+    categorias_secundarias,
+    processo,
+    tipo_processo,
+    contato,
+    contato_responsavel,
+    contato_email,
+    contato_telefone,
+    documentos,
+    valor_estimado,
+    data_publicacao,
+    data_abertura,
+    data_limite_impugnacao,
+    raw_data,
+    raw_html,
+    scraped_at,
+    created_at: createdAtDiscard,
+    updated_at: updatedAtDiscard,
+    ...rest
+  } = licitacao;
+
+  void createdAtDiscard;
+  void updatedAtDiscard;
+
+  return {
+    ...rest,
+    valor_estimado: normalizeValor(valor_estimado),
+    categoria_principal: categoria_principal ?? categoria ?? null,
+    categorias_secundarias: categorias_secundarias ?? [],
+    processo: processo ?? null,
+    tipo_processo: tipo_processo ?? null,
+    documentos: documentos?.length ? documentos : null,
+    contato_responsavel: contato_responsavel ?? contato?.responsavel ?? null,
+    contato_email: contato_email ?? contato?.email ?? null,
+    contato_telefone: contato_telefone ?? contato?.telefone ?? null,
+    data_publicacao: toDateString(data_publicacao),
+    data_abertura: toTimestampString(data_abertura),
+    data_limite_impugnacao: toDateString(data_limite_impugnacao),
+    raw_html: raw_html ?? raw_data?.html ?? null,
+    raw_data: raw_data ?? null,
+    scraped_at: scraped_at ? toTimestampString(scraped_at) : null,
+  };
 }
 
 export interface Noticia {
@@ -31,14 +141,14 @@ export interface Noticia {
   categoria_ia: string;
   subcategoria_ia?: string;
   tags_ia?: string[];
-  entidades_extraidas?: any;
+  entidades_extraidas?: JsonValue;
   sentimento?: 'positivo' | 'neutro' | 'negativo';
   prioridade?: 'alta' | 'media' | 'baixa';
   relevancia_score?: number;
   resumo_ia?: string;
   palavras_chave_ia?: string[];
   acoes_recomendadas?: string[];
-  documentos?: any[];
+  documentos?: Array<Record<string, JsonValue>>;
   links_externos?: string[];
   data_publicacao?: Date;
   data_coleta?: Date;
@@ -57,14 +167,53 @@ export interface ScrapingLog {
 }
 
 // Insert licitações into database
+// Usa UPSERT para evitar duplicatas baseado em: sre_source + numero_edital + data_publicacao
 export async function insertLicitacoes(licitacoes: Licitacao[]) {
-  const { data, error } = await supabaseAdmin
-    .from('licitacoes')
-    .insert(licitacoes)
-    .select();
+  const payload = licitacoes.map(mapLicitacaoForInsert);
 
-  if (error) throw error;
-  return data;
+  // Tentar inserir uma por uma para identificar quais são novas vs duplicadas
+  const resultados = [];
+  let novas = 0;
+  let duplicadas = 0;
+
+  for (const item of payload) {
+    try {
+      // Verificar se já existe
+      const { data: existing } = await supabaseAdmin
+        .from('licitacoes')
+        .select('id')
+        .eq('sre_source', item.sre_source)
+        .eq('numero_edital', item.numero_edital)
+        .eq('data_publicacao', item.data_publicacao)
+        .maybeSingle();
+
+      if (existing) {
+        console.log(`   ⚠️ Duplicada: ${item.numero_edital}`);
+        duplicadas++;
+      } else {
+        // Inserir nova
+        const { data, error } = await supabaseAdmin
+          .from('licitacoes')
+          .insert([item])
+          .select()
+          .single();
+
+        if (error) {
+          console.error(`   ❌ Erro ao inserir ${item.numero_edital}:`, error.message);
+        } else {
+          console.log(`   ✅ Nova: ${item.numero_edital}`);
+          resultados.push(data);
+          novas++;
+        }
+      }
+    } catch (err) {
+      console.error(`   ❌ Erro processando ${item.numero_edital}:`, err);
+    }
+  }
+
+  console.log(`   📊 Resumo: ${novas} novas, ${duplicadas} duplicadas de ${payload.length} total`);
+  
+  return resultados;
 }
 
 // Get all licitações
@@ -92,9 +241,15 @@ export async function getLicitacoesBySRE(sreSource: string) {
 
 // Log scraping activity
 export async function logScraping(log: ScrapingLog) {
+  // Gerar UUID manualmente se não fornecido (fix para default UUID do Supabase)
+  const logWithId = {
+    ...log,
+    id: log.id || crypto.randomUUID(), // Gera UUID se não existir
+  };
+
   const { data, error } = await supabaseAdmin
     .from('scraping_logs')
-    .insert(log)
+    .insert(logWithId)
     .select()
     .single();
 
@@ -247,25 +402,27 @@ export async function getNoticiaById(id: string) {
 // QUERIES PARA ANÁLISES IA (OpenRouter)
 // ===============================================
 
+interface AnaliseIAResposta {
+  categoria: string;
+  subcategoria?: string;
+  tags: string[];
+  entidades: Record<string, JsonValue> | JsonValue[];
+  sentimento: string;
+  prioridade: string;
+  relevancia: number;
+  resumo: string;
+  palavras_chave: string[];
+  acoes_recomendadas: string[];
+  justificativa?: string;
+}
+
 export interface AnaliseIA {
   id?: string;
   noticia_id: string;
   modelo: string;
   provider?: string;
   versao_prompt?: string;
-  resposta_completa: {
-    categoria: string;
-    subcategoria?: string;
-    tags: string[];
-    entidades: any;
-    sentimento: string;
-    prioridade: string;
-    relevancia: number;
-    resumo: string;
-    palavras_chave: string[];
-    acoes_recomendadas: string[];
-    justificativa?: string;
-  };
+  resposta_completa: AnaliseIAResposta;
   tokens_prompt?: number;
   tokens_completion?: number;
   tokens_total?: number;

@@ -12,11 +12,13 @@
 import { prisma } from '../prisma/client';
 import { getOpenRouterClient } from '../openrouter/client';
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
 // Type for licitacao from database
 type Licitacao = {
   id: string;
   objeto: string | null;
-  raw_data: any;
+  raw_data: Record<string, JsonValue> | null;
   numero_edital: string | null;
   modalidade: string | null;
   regional: string | null;

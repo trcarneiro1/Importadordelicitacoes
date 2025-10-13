@@ -6,6 +6,26 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+type UrlTestSuccess = {
+  url: string;
+  status: number;
+  ok: boolean;
+  content_type: string;
+  html_length: number;
+  has_content: boolean;
+  redirected: boolean;
+  final_url: string;
+  title: string;
+  has_licitacoes_keyword: boolean;
+  has_edital_keyword: boolean;
+  has_compras_keyword: boolean;
+};
+
+type UrlTestResult = UrlTestSuccess | { url: string; error: string };
+
+const isSuccessfulResult = (result: UrlTestResult): result is UrlTestSuccess =>
+  'status' in result;
+
 const URL_PATTERNS = [
   '/index.php/licitacoes-e-compras',
   '/licitacoes-e-compras',
@@ -38,7 +58,13 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const sreCode = parseInt(sreParam);
+    const sreCode = Number(sreParam);
+    if (!Number.isInteger(sreCode)) {
+      return NextResponse.json({
+        error: 'Invalid sre parameter. Provide a numeric code.',
+        available_sres: Object.keys(SRE_BASES).join(', ')
+      }, { status: 400 });
+    }
     const baseUrl = SRE_BASES[sreCode];
 
     if (!baseUrl) {
@@ -50,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     console.log(`🧪 Testing URLs for SRE ${sreCode}: ${baseUrl}`);
 
-    const results = [];
+  const results: UrlTestResult[] = [];
 
     for (const pattern of URL_PATTERNS) {
       const testUrl = baseUrl + pattern;
@@ -85,18 +111,20 @@ export async function GET(request: NextRequest) {
         // Wait 500ms between requests
         await new Promise(resolve => setTimeout(resolve, 500));
 
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
         results.push({
           url: testUrl,
-          error: error.message
+          error: message
         });
       }
     }
 
     // Find best candidate
-    const workingUrls = results.filter(r => 
-      r.ok && 
-      r.has_content && 
+    const workingUrls = results.filter((r): r is UrlTestSuccess =>
+      isSuccessfulResult(r) &&
+      r.ok &&
+      r.has_content &&
       (r.has_licitacoes_keyword || r.has_edital_keyword || r.has_compras_keyword)
     );
 
@@ -106,8 +134,8 @@ export async function GET(request: NextRequest) {
       results,
       summary: {
         total_tested: results.length,
-        working: results.filter(r => r.ok).length,
-        with_content: results.filter(r => r.has_content).length,
+        working: results.filter(isSuccessfulResult).filter(result => result.ok).length,
+        with_content: results.filter(isSuccessfulResult).filter(result => result.has_content).length,
         potential_matches: workingUrls.length
       },
       recommendations: workingUrls.map(r => ({
@@ -121,10 +149,11 @@ export async function GET(request: NextRequest) {
       })).sort((a, b) => b.score - a.score)
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Test URLs error:', error);
     return NextResponse.json({
-      error: error.message
+      error: message
     }, { status: 500 });
   }
 }

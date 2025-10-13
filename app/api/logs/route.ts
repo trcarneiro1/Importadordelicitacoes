@@ -10,10 +10,11 @@ export async function GET() {
       count: logs.length,
       data: logs,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch logs';
     console.error('Database error:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch logs' },
+      { error: message },
       { status: 500 }
     );
   }

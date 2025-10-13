@@ -1,6 +1,6 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { format, parse } from 'date-fns';
+import { parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 export interface ScrapedLicitacao {
@@ -12,7 +12,14 @@ export interface ScrapedLicitacao {
   data_abertura?: Date;
   situacao?: string;
   documentos?: string[];
-  raw_data?: any;
+  raw_data?: ScrapedRawData;
+}
+
+export interface ScrapedRawData {
+  html?: string | null;
+  text?: string;
+  url?: string;
+  [key: string]: unknown;
 }
 
 export interface ScrapeResult {
@@ -34,11 +41,11 @@ export function parseBrazilianDate(dateStr: string): Date | undefined {
       try {
         const date = parse(dateStr.trim(), fmt, new Date(), { locale: ptBR });
         if (!isNaN(date.getTime())) return date;
-      } catch (e) {
+      } catch (_error) {
         continue;
       }
     }
-  } catch (error) {
+  } catch (_error) {
     console.warn(`Failed to parse date: ${dateStr}`);
   }
   
@@ -59,7 +66,7 @@ export function parseBrazilianCurrency(valueStr: string): number | undefined {
     
     const value = parseFloat(cleaned);
     return isNaN(value) ? undefined : value;
-  } catch (error) {
+  } catch (_error) {
     console.warn(`Failed to parse currency: ${valueStr}`);
     return undefined;
   }
@@ -102,7 +109,7 @@ export async function scrapeSRE(sreUrl: string): Promise<ScrapeResult> {
           finalUrl = testUrl;
           break;
         }
-      } catch (e) {
+      } catch (_error) {
         // Try next path
         continue;
       }
@@ -177,8 +184,9 @@ export async function scrapeSRE(sreUrl: string): Promise<ScrapeResult> {
     result.licitacoes = licitacoes.slice(0, 10); // Limit to first 10 for POC
     result.success = true;
 
-  } catch (error: any) {
-    result.error = error.message || 'Unknown error';
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    result.error = message;
     result.success = false;
   }
 
@@ -197,12 +205,13 @@ export async function scrapeMultipleSREs(sreUrls: string[]): Promise<ScrapeResul
       
       // Rate limiting: wait 2 seconds between requests
       await new Promise(resolve => setTimeout(resolve, 2000));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
       results.push({
         success: false,
         sre_source: url,
         licitacoes: [],
-        error: error.message,
+        error: message,
       });
     }
   }

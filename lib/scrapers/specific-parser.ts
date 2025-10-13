@@ -1,5 +1,8 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+type CheerioRoot = ReturnType<typeof cheerio.load>;
+type CheerioElement = cheerio.Element;
+type CheerioSelection = cheerio.Cheerio;
 import { parseBrazilianDate, parseBrazilianCurrency } from './sre-scraper';
 
 export interface LicitacaoCompleta {
@@ -22,7 +25,15 @@ export interface LicitacaoCompleta {
   };
   processo?: string;
   categoria?: string;
-  raw_data: any;
+  raw_data: LicitacaoRawData;
+}
+
+export interface LicitacaoRawData {
+  html?: string | null;
+  text?: string;
+  url?: string;
+  titulo?: string;
+  [key: string]: unknown;
 }
 
 export interface ParserResult {
@@ -35,8 +46,10 @@ export interface ParserResult {
 
 /**
  * Parser específico otimizado - detecta automaticamente a estrutura
+ * @param sreUrl - URL base da SRE
+ * @param daysAgo - Número de dias atrás para buscar (padrão: 60 para testes, depois 30)
  */
-export async function parseSpecificSRE(sreUrl: string): Promise<ParserResult> {
+export async function parseSpecificSRE(sreUrl: string, daysAgo: number = 60): Promise<ParserResult> {
   const result: ParserResult = {
     success: false,
     sre_source: new URL(sreUrl).hostname,
@@ -45,6 +58,8 @@ export async function parseSpecificSRE(sreUrl: string): Promise<ParserResult> {
   };
 
   try {
+    console.log(`🔍 Buscando licitações de até ${daysAgo} dias atrás...`);
+    
     // Tentar URLs comuns de licitações
     const paths = [
       '/licitacoes',
@@ -73,7 +88,7 @@ export async function parseSpecificSRE(sreUrl: string): Promise<ParserResult> {
           finalUrl = testUrl;
           break;
         }
-      } catch (e) {
+      } catch (_error) {
         continue;
       }
     }
@@ -96,8 +111,8 @@ export async function parseSpecificSRE(sreUrl: string): Promise<ParserResult> {
     result.success = licitacoes.length > 0;
     result.parser_usado = detectParserType($);
 
-  } catch (error: any) {
-    result.error = error.message;
+  } catch (error: unknown) {
+    result.error = error instanceof Error ? error.message : 'Erro desconhecido';
     result.success = false;
   }
 
@@ -107,7 +122,7 @@ export async function parseSpecificSRE(sreUrl: string): Promise<ParserResult> {
 /**
  * Detecta tipo de CMS/estrutura usado
  */
-function detectParserType($: any): string {
+function detectParserType($: CheerioRoot): string {
   const html = $.html();
   
   if (html.includes('wp-content') || html.includes('wordpress')) {
@@ -129,11 +144,11 @@ function detectParserType($: any): string {
 /**
  * Parser para sites WordPress
  */
-function tryParserWordPress($: any, baseUrl: string): LicitacaoCompleta[] | null {
+function tryParserWordPress($: CheerioRoot, baseUrl: string): LicitacaoCompleta[] | null {
   const licitacoes: LicitacaoCompleta[] = [];
   
   // WordPress geralmente usa posts ou custom post types
-  $('.post, .licitacao, article').each((_: any, element: any) => {
+  $('.post, .licitacao, article').each((index: number, element: CheerioElement) => {
     const $el = $(element);
     const texto = $el.text();
 
@@ -150,7 +165,7 @@ function tryParserWordPress($: any, baseUrl: string): LicitacaoCompleta[] | null
         valor_estimado: valorMatch ? parseBrazilianCurrency(valorMatch[0]) : undefined,
         data_publicacao: dataMatch ? parseBrazilianDate(dataMatch[0]) : undefined,
         situacao: extractSituacao(texto),
-        documentos: extractDocumentos($el, baseUrl),
+  documentos: extractDocumentos($, $el, baseUrl),
         categoria: extractCategoria(texto),
         raw_data: {
           html: $el.html(),
@@ -169,7 +184,7 @@ function tryParserWordPress($: any, baseUrl: string): LicitacaoCompleta[] | null
 /**
  * Parser para sites Joomla
  */
-function tryParserJoomla($: any, baseUrl: string): LicitacaoCompleta[] | null {
+function tryParserJoomla($: CheerioRoot, baseUrl: string): LicitacaoCompleta[] | null {
   const licitacoes: LicitacaoCompleta[] = [];
 
   // Joomla geralmente usa divs com classes específicas
@@ -190,20 +205,29 @@ function tryParserJoomla($: any, baseUrl: string): LicitacaoCompleta[] | null {
     if (elements.length > 0) {
       console.log(`   🔍 Found ${elements.length} items with selector: ${selector}`);
       
-      elements.each((_: any, element: any) => {
+      elements.each((index: number, element: CheerioElement) => {
         const $el = $(element);
         const texto = $el.text();
         const titulo = $el.find('h2, h3, h4, .entry-title, [itemprop="name"]').first().text().trim();
 
-        // Buscar por padrões de licitação/edital
-        const hasKeywords = texto.match(/edital|licitação|licitacao|pregão|pregao|contratação|contratacao|processo seletivo/i);
+        // Log para debug
+        console.log(`   🔎 Item ${index + 1}: Título="${titulo.substring(0, 60)}..." | Texto length=${texto.length}`);
+
+        // Buscar por padrões de licitação/edital - expandido para incluir "aviso", "publicação", etc.
+        const hasKeywords = texto.match(/edital|licitação|licitacao|pregão|pregao|contratação|contratacao|processo seletivo|aviso de publicação|publicação|dispensa|inexigibilidade/i);
+        const hasTituloKeywords = titulo.match(/edital|licitação|pregão|aviso|publicação|dispensa|inexigibilidade/i);
         
-        if (hasKeywords || titulo.match(/edital|licitação|pregão/i)) {
-          const licitacao = createLicitacaoFromElement($el, texto, baseUrl, titulo);
+        if (hasKeywords || hasTituloKeywords) {
+          console.log(`   ✨ MATCH! Keywords found in ${hasKeywords ? 'text' : 'title'}`);
+          const licitacao = createLicitacaoFromElement($, $el, texto, baseUrl, titulo);
           if (licitacao) {
             console.log(`   ✅ Parsed: ${licitacao.numero_edital} - ${licitacao.objeto.substring(0, 50)}...`);
             licitacoes.push(licitacao);
+          } else {
+            console.log(`   ⚠️ createLicitacaoFromElement returned null`);
           }
+        } else {
+          console.log(`   ⏭️ Skipped - no keywords match`);
         }
       });
 
@@ -218,23 +242,29 @@ function tryParserJoomla($: any, baseUrl: string): LicitacaoCompleta[] | null {
 /**
  * Parser para tabelas customizadas
  */
-function tryParserCustomTable($: any, baseUrl: string): LicitacaoCompleta[] | null {
+function tryParserCustomTable($: CheerioRoot, baseUrl: string): LicitacaoCompleta[] | null {
   const licitacoes: LicitacaoCompleta[] = [];
 
   // Procurar tabelas com licitações
-  $('table').each((_: any, table: any) => {
+  $('table').each((index: number, table: CheerioElement) => {
     const $table = $(table);
-    const headers = $table.find('th, thead td').map((_: any, th: any) => $(th).text().toLowerCase()).get();
+    const headers = $table
+      .find('th, thead td')
+      .map((headerIndex: number, th: CheerioElement) => $(th).text().toLowerCase())
+      .get();
 
     // Se tem headers relacionados a licitações
     if (headers.some((h: string) => h.match(/edital|modalidade|objeto|valor/))) {
-      $table.find('tbody tr, tr').each((_: any, row: any) => {
+      $table.find('tbody tr, tr').each((rowIndex: number, row: CheerioElement) => {
         const $row = $(row);
-        const cells = $row.find('td').map((_: any, td: any) => $(td).text().trim()).get();
+        const cells = $row
+          .find('td')
+          .map((cellIndex: number, td: CheerioElement) => $(td).text().trim())
+          .get();
 
-        if (cells.length > 0 && cells.some((c: any) => c.length > 5)) {
+        if (cells.length > 0 && cells.some((cell) => cell.length > 5)) {
           const texto = cells.join(' | ');
-          const licitacao = createLicitacaoFromText(texto, $row, baseUrl);
+          const licitacao = createLicitacaoFromText($, texto, $row, baseUrl);
           if (licitacao) licitacoes.push(licitacao);
         }
       });
@@ -247,11 +277,11 @@ function tryParserCustomTable($: any, baseUrl: string): LicitacaoCompleta[] | nu
 /**
  * Parser genérico aprimorado
  */
-function tryParserGeneric($: any, baseUrl: string): LicitacaoCompleta[] {
+function tryParserGeneric($: CheerioRoot, baseUrl: string): LicitacaoCompleta[] {
   const licitacoes: LicitacaoCompleta[] = [];
 
   // Procurar em qualquer elemento que mencione licitação
-  $('*').each((_: any, element: any) => {
+  $('*').each((index: number, element: CheerioElement) => {
     const $el = $(element);
     const texto = $el.text();
 
@@ -262,7 +292,7 @@ function tryParserGeneric($: any, baseUrl: string): LicitacaoCompleta[] {
       texto.match(/(?:pregão|concorrência|edital|licitação)/i) &&
       texto.match(/\d{1,4}\/\d{4}/)
     ) {
-      const licitacao = createLicitacaoFromElement($el, texto, baseUrl);
+    const licitacao = createLicitacaoFromElement($, $el, texto, baseUrl);
       if (licitacao) {
         // Evitar duplicatas
         const exists = licitacoes.some((l: LicitacaoCompleta) => 
@@ -282,15 +312,60 @@ function tryParserGeneric($: any, baseUrl: string): LicitacaoCompleta[] {
 /**
  * Cria objeto de licitação a partir de elemento HTML
  */
-function createLicitacaoFromElement($el: any, texto: string, baseUrl: string, titulo?: string): LicitacaoCompleta | null {
+function createLicitacaoFromElement(
+  $: CheerioRoot,
+  $el: CheerioSelection,
+  texto: string,
+  baseUrl: string,
+  titulo?: string,
+  daysAgo: number = 60
+): LicitacaoCompleta | null {
   // Se tem título, usar ele como objeto principal
   const objeto = titulo && titulo.length > 10 ? titulo : extractObjeto($el);
   
-  // Buscar número do edital no texto ou título
-  const numeroMatch = (texto + ' ' + (titulo || '')).match(/(?:Pregão|Concorrência|Convite|Tomada de Preços|Dispensa|Inexigibilidade|Edital|Processo)[:\s#nº]*(\d+[\/\-_]\d{4})/i);
-  const numeroGenerico = (texto + ' ' + (titulo || '')).match(/(?:nº|n°|número|processo)[:\s]*(\d+[\/\-_]\d{4})/i);
+  // Buscar número do edital no texto ou título - REGEX MELHORADO
+  // Primeiro: Tentar padrão completo com tipo + número
+  const numeroCompleto = (texto + ' ' + (titulo || '')).match(/(?:Pregão|Concorrência|Convite|Tomada de Preços|Dispensa|Inexigibilidade|Edital|Processo|Aviso)[:\s#nº]*(\d+[\/\-_]\d{4})/i);
   
-  const numeroEdital = numeroMatch ? numeroMatch[0] : (numeroGenerico ? numeroGenerico[0] : 'S/N');
+  // Segundo: Tentar apenas número com ano (ex: "1582/2025" ou "28/08/2025" na URL)
+  const numeroAno = (texto + ' ' + (titulo || '') + ' ' + baseUrl).match(/\b(\d{3,4})[\/\-](\d{4})\b/);
+  
+  // Terceiro: Extrair da URL se tiver padrão /licitacoes/NUMERO-descricao
+  const numeroUrl = baseUrl.match(/\/licitacoes\/(\d+)-/i);
+  
+  // Quarto: Buscar data no formato DD/MM/YYYY no título (pode ser identificador único)
+  const dataNoTitulo = (titulo || '').match(/(\d{2}\/\d{2}\/\d{4})/);
+  
+  let numeroEdital = 'S/N';
+  
+  if (numeroCompleto) {
+    numeroEdital = numeroCompleto[0];
+    console.log(`   🔢 Número extraído (completo): ${numeroEdital}`);
+  } else if (numeroUrl) {
+    numeroEdital = `#${numeroUrl[1]}`;
+    console.log(`   🔢 Número extraído (URL): ${numeroEdital}`);
+  } else if (numeroAno && numeroAno[1].length >= 3) {
+    numeroEdital = `${numeroAno[1]}/${numeroAno[2]}`;
+    console.log(`   🔢 Número extraído (padrão ano): ${numeroEdital}`);
+  } else if (dataNoTitulo) {
+    numeroEdital = `Aviso-${dataNoTitulo[1].replace(/\//g, '-')}`;
+    console.log(`   🔢 Número extraído (data): ${numeroEdital}`);
+  } else {
+    console.log(`   ⚠️ Número do edital não encontrado - usando S/N`);
+  }
+
+  // Verificar data de publicação - aceitar até N dias atrás
+  const dataPublicacao = extractData(texto, 'publicação') || extractData(titulo || '', 'publicação');
+  if (dataPublicacao) {
+    const diasAtras = (new Date().getTime() - dataPublicacao.getTime()) / (1000 * 60 * 60 * 24);
+    console.log(`   📅 Data publicação: ${dataPublicacao.toLocaleDateString('pt-BR')} (${Math.floor(diasAtras)} dias atrás)`);
+    
+    // COMENTADO: Filtro de data desabilitado para testes
+    // if (diasAtras > daysAgo) {
+    //   console.log(`   ⏭️ Skipped - too old (${Math.floor(diasAtras)} > ${daysAgo} days)`);
+    //   return null;
+    // }
+  }
 
   return {
     numero_edital: numeroEdital,
@@ -300,7 +375,7 @@ function createLicitacaoFromElement($el: any, texto: string, baseUrl: string, ti
     data_publicacao: extractData(texto, 'publicação'),
     data_abertura: extractData(texto, 'abertura'),
     situacao: extractSituacao(texto),
-    documentos: extractDocumentos($el, baseUrl),
+  documentos: extractDocumentos($, $el, baseUrl),
     categoria: extractCategoria(texto),
     processo: extractProcesso(texto),
     raw_data: {
@@ -314,12 +389,17 @@ function createLicitacaoFromElement($el: any, texto: string, baseUrl: string, ti
 /**
  * Cria licitação a partir de texto puro
  */
-function createLicitacaoFromText(texto: string, $el: any, baseUrl: string): LicitacaoCompleta | null {
+function createLicitacaoFromText(
+  $: CheerioRoot,
+  texto: string,
+  $el: CheerioSelection,
+  baseUrl: string
+): LicitacaoCompleta | null {
   const numeroMatch = texto.match(/(?:Pregão|Concorrência|Convite|Tomada de Preços)[:\s]*(\d+\/\d{4})/i);
   
   if (!numeroMatch) return null;
 
-  return createLicitacaoFromElement($el, texto, baseUrl);
+  return createLicitacaoFromElement($, $el, texto, baseUrl);
 }
 
 // Funções auxiliares de extração
@@ -346,7 +426,7 @@ function extractModalidade(texto: string): string {
   return 'Não especificada';
 }
 
-function extractObjeto($el: any): string {
+function extractObjeto($el: CheerioSelection): string {
   const texto = $el.text();
   
   // Procurar por "objeto:" ou similar
@@ -424,18 +504,25 @@ function extractSituacao(texto: string): string {
   return 'Em andamento';
 }
 
-function extractDocumentos($el: any, baseUrl: string): Array<{ nome: string; url: string; tipo: string }> {
+function extractDocumentos(
+  $: CheerioRoot,
+  $el: CheerioSelection,
+  baseUrl: string
+): Array<{ nome: string; url: string; tipo: string }> {
   const documentos: Array<{ nome: string; url: string; tipo: string }> = [];
 
-  $el.find('a').each((_: any, link: any) => {
-    const href = link.attribs?.href;
-    const texto = $el(link).text().trim();
+  $el.find('a').each((index: number, link: CheerioElement) => {
+    if (!('attribs' in link) || !link.attribs) {
+      return;
+    }
+    const href = link.attribs.href;
+    const texto = $(link).text().trim();
 
     if (href && (href.includes('.pdf') || href.includes('edital') || href.includes('anexo'))) {
       const url = href.startsWith('http') ? href : new URL(href, baseUrl).href;
       documentos.push({
         nome: texto || 'Documento',
-        url: url,
+        url,
         tipo: href.includes('.pdf') ? 'PDF' : 'Link',
       });
     }

@@ -122,8 +122,9 @@ export class OpenRouterClient {
 
       return content;
 
-    } catch (error: any) {
-      console.error('[OpenRouter] Error:', error.message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[OpenRouter] Error:', message);
       throw error;
     }
   }
