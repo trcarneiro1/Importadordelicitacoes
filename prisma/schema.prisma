@@ -198,6 +198,46 @@ model user_alerts {
 }
 
 // =====================================================
+// CONFIGURAÇÕES DO SISTEMA
+// =====================================================
+model scraping_config {
+  id                      String    @id @default(uuid()) @db.Uuid
+  
+  // ===== AGENDAMENTO =====
+  enabled                 Boolean   @default(true)           // Ativa/desativa scraping automático
+  interval_hours          Int       @default(24)             // Intervalo em horas (1-72)
+  interval_minutes        Int       @default(0)              // Minutos adicionais (0-59)
+  
+  // ===== ÚLTIMOS RUNS =====
+  last_run_at             DateTime?                          // Data/hora do último scraping
+  last_run_success        Boolean   @default(false)          // Sucesso do último run
+  last_run_licitacoes     Int?      @default(0)              // Licitações encontradas no último run
+  last_run_duration_ms    Int?                               // Duração do último run em ms
+  last_run_error          String?   @db.Text                 // Mensagem de erro do último run
+  
+  // ===== PRÓXIMO RUN =====
+  next_run_at             DateTime?                          // Data/hora agendada para o próximo run
+  
+  // ===== ESTATÍSTICAS =====
+  total_runs              Int       @default(0)              // Total de execuções
+  successful_runs         Int       @default(0)              // Total de execuções bem-sucedidas
+  failed_runs             Int       @default(0)              // Total de execuções com erro
+  total_licitacoes_found  Int       @default(0)              // Total de licitações encontradas
+  
+  // ===== CONTROLE =====
+  max_retries             Int       @default(3)              // Quantas tentativas em caso de erro
+  timeout_seconds         Int       @default(3600)           // Timeout máximo para um run (1 hora padrão)
+  sres_enabled            Int[]     @default([])             // IDs das SREs habilitadas (vazio = todas)
+  
+  // ===== TIMESTAMPS =====
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+  
+  @@index([enabled])
+  @@index([next_run_at])
+}
+
+// =====================================================
 // ATIVIDADE DE USUÁRIOS (Rastreamento de Comportamento)
 // =====================================================
 model user_activity {
