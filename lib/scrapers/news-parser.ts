@@ -65,7 +65,7 @@ export async function parseNewsFromSRE(
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
-        console.error(`Erro ao processar notícia ${index}:`, message);
+        console.error(`Erro ao processar SRE ${sreUrl}:`, message);
         continue;
       }
     }

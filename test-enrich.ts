@@ -42,7 +42,7 @@ async function main() {
   const startTime = Date.now();
   
   try {
-    const enrichedData = await enrichLicitacao(licitacao);
+    const enrichedData = await enrichLicitacao(licitacao as any);
     const duration = Date.now() - startTime;
 
     console.log(`✅ Processamento concluído em ${duration}ms\n`);

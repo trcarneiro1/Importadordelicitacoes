@@ -92,7 +92,7 @@ interface LicitacaoData {
  */
 export async function saveLicitacoes(licitacoes: LicitacaoData[]) {
   return prisma.licitacoes.createMany({
-    data: licitacoes as Parameters<typeof prisma.licitacoes.createMany>[0]['data'],
+    data: licitacoes as any,
     skipDuplicates: true
   });
 }

@@ -18,7 +18,7 @@ type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string
 type Licitacao = {
   id: string;
   objeto: string | null;
-  raw_data: Record<string, JsonValue> | null;
+  raw_data: JsonValue;
   numero_edital: string | null;
   modalidade: string | null;
   regional: string | null;
@@ -235,10 +235,7 @@ export async function saveLicitacaoEnriquecida(
   enrichedData: EnrichedData
 ): Promise<void> {
   try {
-    await prisma.licitacoes.update({
-      where: { id },
-      data: {
-        // Prepare update data, handling JSON fields properly
+    // Prepare update data, handling JSON fields properly
     const updateData: any = {
       escola: enrichedData.escola,
       municipio_escola: enrichedData.municipio_escola,
@@ -261,10 +258,12 @@ export async function saveLicitacaoEnriquecida(
     if (enrichedData.itens_detalhados !== null) {
       updateData.itens_detalhados = enrichedData.itens_detalhados;
     }
-        processado_ia: true,
-        processado_ia_at: new Date()
-      }
+
+    await prisma.licitacoes.update({
+      where: { id },
+      data: updateData
     });
+
     console.log(`[Enrichment] 💾 Saved enriched data for ${id}`);
   } catch (error: any) {
     console.error(`[Enrichment] ❌ Error saving enriched data:`, error.message);
@@ -314,7 +313,7 @@ export async function processLicitacoesPendentes(limit: number = 50): Promise<{
 
   for (const licitacao of licitacoes) {
     try {
-      const enrichedData = await enrichLicitacao(licitacao);
+      const enrichedData = await enrichLicitacao(licitacao as Licitacao);
       await saveLicitacaoEnriquecida(licitacao.id, enrichedData);
 
       results.push({
