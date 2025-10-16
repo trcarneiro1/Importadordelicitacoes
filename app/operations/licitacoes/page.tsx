@@ -5,7 +5,7 @@ import { Search, Filter, Download, Eye, Edit, Trash2, ChevronDown, ChevronUp, Pl
 import Link from 'next/link';
 
 interface Licitacao {
-  id: string;s
+  id: string;
   numero_edital: string;
   objeto: string;
   valor_estimado: number;

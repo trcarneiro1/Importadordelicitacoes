@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     const licitacaoForEnrichment: EnrichmentInput = {
       id: licitacao.id,
       objeto: licitacao.objeto,
-      raw_data: licitacao.raw_data,
+      raw_data: licitacao.raw_data as Record<string, any> | null,
       numero_edital: licitacao.numero_edital,
       modalidade: licitacao.modalidade,
       regional: licitacao.regional,

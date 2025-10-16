@@ -4,13 +4,14 @@ import { supabaseAdmin } from '@/lib/supabase/client';
 // GET - Buscar SRE específica
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const { data, error } = await supabaseAdmin
       .from('sres')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .single();
 
     if (error) throw error;
@@ -35,9 +36,10 @@ export async function GET(
 // PUT - Atualizar SRE
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const body = await request.json();
     
     const { data, error } = await supabaseAdmin
@@ -52,7 +54,7 @@ export async function PUT(
         tipo_cms: body.tipo_cms || null,
         ativo: body.ativo ?? true
       })
-      .eq('id', params.id)
+      .eq('id', id)
       .select()
       .single();
 
@@ -86,14 +88,15 @@ export async function PUT(
 // DELETE - Excluir SRE
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     // Verificar se há licitações vinculadas
     const { count } = await supabaseAdmin
       .from('licitacoes')
       .select('id', { count: 'exact', head: true })
-      .eq('sre_code', params.id);
+      .eq('sre_code', id);
 
     if (count && count > 0) {
       return NextResponse.json(
@@ -105,7 +108,7 @@ export async function DELETE(
     const { error } = await supabaseAdmin
       .from('sres')
       .delete()
-      .eq('id', params.id);
+      .eq('id', id);
 
     if (error) throw error;
 

@@ -1,0 +1,28 @@
+    // Prepare update data, handling JSON fields properly
+    const updateData: any = {
+      escola: enrichedData.escola,
+      municipio_escola: enrichedData.municipio_escola,
+      categoria_principal: enrichedData.categoria_principal,
+      categorias_secundarias: enrichedData.categorias_secundarias,
+      itens_principais: enrichedData.itens_principais,
+      palavras_chave: enrichedData.palavras_chave,
+      fornecedor_tipo: enrichedData.fornecedor_tipo,
+      score_relevancia: enrichedData.score_relevancia,
+      resumo_executivo: enrichedData.resumo_executivo,
+      complexidade: enrichedData.complexidade,
+      contato_responsavel: enrichedData.contato_responsavel,
+      contato_email: enrichedData.contato_email,
+      contato_telefone: enrichedData.contato_telefone,
+      processado_ia: true,
+      processado_ia_at: new Date()
+    };
+
+    // Handle JSON field - only set if not null
+    if (enrichedData.itens_detalhados !== null) {
+      updateData.itens_detalhados = enrichedData.itens_detalhados;
+    }
+
+    await prisma.licitacoes.update({
+      where: { id },
+      data: updateData
+    });

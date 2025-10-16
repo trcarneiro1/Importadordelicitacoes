@@ -61,7 +61,11 @@ export async function trackUserActivity(
 /**
  * Obtém perfil do usuário baseado no histórico de acessos
  */
-export async function getUserProfile(userId: string) {
+export async function getUserProfile(userId: string): Promise<{
+  total_acessos: number;
+  categorias_favoritas: string[];
+  sres_favoritas: string[];
+} | null> {
   // TEMPORARIAMENTE DESABILITADO - será reativado após migração para Prisma
   return null;
 }

@@ -8,9 +8,9 @@ import { getUserId } from '@/lib/tracking/user-activity';
  */
 
 type RouteParams = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 export async function POST(
@@ -18,7 +18,7 @@ export async function POST(
   { params }: RouteParams
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const userId = await getUserId(request);
 
     // Verificar se já existe registro de leitura
@@ -69,7 +69,7 @@ export async function GET(
   { params }: RouteParams
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const userId = await getUserId(request);
 
     const lida = await prisma.user_activity.findFirst({
