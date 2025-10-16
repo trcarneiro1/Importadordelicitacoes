@@ -35,6 +35,21 @@ interface ScrapingLog {
   timestamp?: string;
 }
 
+interface AILog {
+  id?: string;
+  licitacao_id?: string;
+  licitacao_titulo?: string;
+  sre_name?: string;
+  status: string;
+  message: string;
+  category?: string;
+  priority?: string;
+  confidence?: number;
+  processing_time_ms?: number;
+  error_message?: string;
+  timestamp?: string;
+}
+
 export default function MonitoramentoPage() {
   const [scrapingAtivo, setScrapingAtivo] = useState(false);
   const [processamentoAtivo, setProcessamentoAtivo] = useState(false);
@@ -57,6 +72,15 @@ export default function MonitoramentoPage() {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Novo: Logs de IA em tempo real
+  const [iaSessionId, setIASessionId] = useState<string>('');
+  const [iaLogs, setIALogs] = useState<AILog[]>([]);
+  const [isIAProcessing, setIsIAProcessing] = useState(false);
+  const [iaAutoScroll, setIAAutoScroll] = useState(true);
+  const [iaUpdateInterval, setIAUpdateInterval] = useState(1000);
+  const iaLogsEndRef = useRef<HTMLDivElement>(null);
+  const iaPollingRef = useRef<NodeJS.Timeout | null>(null);
+
   // Auto-refresh a cada 5 segundos
   useEffect(() => {
     loadStatus();
@@ -70,6 +94,13 @@ export default function MonitoramentoPage() {
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [logs, autoScroll]);
+
+  // Auto-scroll quando novos logs de IA chegam
+  useEffect(() => {
+    if (iaAutoScroll && iaLogsEndRef.current) {
+      iaLogsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [iaLogs, iaAutoScroll]);
 
   const loadStatus = async () => {
     try {
@@ -187,6 +218,78 @@ export default function MonitoramentoPage() {
     ]);
   };
 
+  // Funções de IA
+  const iniciarProcessamentoIAComLogs = async () => {
+    try {
+      const response = await fetch('/api/process-ia-with-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setIASessionId(data.session_id);
+        setIsIAProcessing(true);
+        setIALogs([]);
+        iniciarPollingIA(data.session_id);
+      } else {
+        adicionarLogIA({
+          sre_name: 'ERRO',
+          status: 'error',
+          message: 'Erro ao iniciar processamento IA',
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao iniciar processamento IA:', error);
+      adicionarLogIA({
+        sre_name: 'ERRO',
+        status: 'error',
+        message: `Erro: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      });
+    }
+  };
+
+  const iniciarPollingIA = (sessionId: string) => {
+    if (iaPollingRef.current) {
+      clearInterval(iaPollingRef.current);
+    }
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/ia-logs?session_id=${sessionId}&limit=100`);
+        if (response.ok) {
+          const data = await response.json();
+          setIALogs(data.logs || []);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar logs IA:', error);
+      }
+    };
+
+    poll();
+    iaPollingRef.current = setInterval(poll, iaUpdateInterval);
+  };
+
+  const pararProcessamentoIA = () => {
+    if (iaPollingRef.current) {
+      clearInterval(iaPollingRef.current);
+      iaPollingRef.current = null;
+    }
+    setIsIAProcessing(false);
+  };
+
+  const adicionarLogIA = (log: AILog) => {
+    setIALogs((prev) => [
+      ...prev,
+      {
+        ...log,
+        id: `${Date.now()}-${Math.random()}`,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+  };
+
   const pararScraping = async () => {
     try {
       const response = await fetch('/api/automation/scraping/stop', { method: 'POST' });
@@ -274,6 +377,49 @@ export default function MonitoramentoPage() {
     sres_processadas: new Set(logs.filter((l) => l.sre_code).map((l) => l.sre_code)).size,
     total_licitacoes: logs.reduce((sum, log) => sum + (log.licitacoes_found_this_page || 0), 0),
     erros: logs.filter((l) => l.status === 'error').length,
+  };
+
+  // Funções auxiliares para IA
+  const getIALogColor = (status: string) => {
+    switch (status) {
+      case 'starting':
+        return 'bg-blue-50 border-l-4 border-blue-500';
+      case 'processing':
+        return 'bg-purple-50 border-l-4 border-purple-500';
+      case 'success':
+        return 'bg-green-50 border-l-4 border-green-500';
+      case 'completed':
+        return 'bg-green-100 border-l-4 border-green-600';
+      case 'error':
+        return 'bg-red-50 border-l-4 border-red-500';
+      default:
+        return 'bg-gray-50 border-l-4 border-gray-300';
+    }
+  };
+
+  const getIALogIcon = (status: string) => {
+    switch (status) {
+      case 'starting':
+        return '🤖';
+      case 'processing':
+        return '⚙️';
+      case 'success':
+        return '✅';
+      case 'completed':
+        return '🎉';
+      case 'error':
+        return '❌';
+      default:
+        return '📌';
+    }
+  };
+
+  const statsIALogs = {
+    total_logs: iaLogs.length,
+    licitacoes_processadas: new Set(iaLogs.filter((l) => l.licitacao_id).map((l) => l.licitacao_id)).size,
+    categorias_encontradas: new Set(iaLogs.filter((l) => l.category).map((l) => l.category)).size,
+    prioridades_altas: iaLogs.filter((l) => l.priority === 'Alta').length,
+    erros: iaLogs.filter((l) => l.status === 'error').length,
   };
 
   return (
@@ -565,6 +711,130 @@ export default function MonitoramentoPage() {
                   </div>
                 ))}
                 <div ref={logsEndRef} />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* NOVA SEÇÃO: Monitoramento de IA com Logs */}
+        <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6 mt-8">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-gray-900">🤖 Processamento de Licitações com IA</h3>
+            <button
+              onClick={iniciarProcessamentoIAComLogs}
+              disabled={isIAProcessing}
+              className={`px-6 py-2 rounded-lg font-semibold transition-all ${
+                isIAProcessing
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-purple-600 hover:bg-purple-700 active:scale-95 text-white'
+              }`}
+            >
+              {isIAProcessing ? '⏳ Processando...' : '🚀 Iniciar Processamento IA'}
+            </button>
+          </div>
+
+          {isIAProcessing && (
+            <div className="mb-4 flex gap-4 items-center">
+              <button
+                onClick={pararProcessamentoIA}
+                className="px-4 py-2 rounded-lg font-semibold bg-red-500 hover:bg-red-600 text-white transition-all"
+              >
+                ⏹️ Parar
+              </button>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={iaAutoScroll}
+                  onChange={(e) => setIAAutoScroll(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-gray-700">Auto-scroll</span>
+              </label>
+
+              <select
+                value={iaUpdateInterval}
+                onChange={(e) => setIAUpdateInterval(parseInt(e.target.value))}
+                className="px-3 py-1 rounded border border-gray-300 text-sm"
+              >
+                <option value={500}>500ms</option>
+                <option value={1000}>1s</option>
+                <option value={2000}>2s</option>
+                <option value={5000}>5s</option>
+              </select>
+            </div>
+          )}
+
+          {/* Stats de IA */}
+          {iaLogs.length > 0 && (
+            <div className="grid grid-cols-5 gap-4 mb-6">
+              <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                <div className="text-xs text-gray-600">Logs</div>
+                <div className="text-xl font-bold text-gray-900">{statsIALogs.total_logs}</div>
+              </div>
+              <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                <div className="text-xs text-purple-600">Processadas</div>
+                <div className="text-xl font-bold text-purple-700">{statsIALogs.licitacoes_processadas}</div>
+              </div>
+              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                <div className="text-xs text-blue-600">Categorias</div>
+                <div className="text-xl font-bold text-blue-700">{statsIALogs.categorias_encontradas}</div>
+              </div>
+              <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
+                <div className="text-xs text-orange-600">Prioridade Alta</div>
+                <div className="text-xl font-bold text-orange-700">{statsIALogs.prioridades_altas}</div>
+              </div>
+              <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+                <div className="text-xs text-red-600">Erros</div>
+                <div className="text-xl font-bold text-red-700">{statsIALogs.erros}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Logs Container de IA */}
+          <div className="max-h-96 overflow-y-auto bg-gray-50 rounded-lg p-4 border border-gray-200">
+            {iaLogs.length === 0 && !isIAProcessing ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500 text-sm">Clique em "🚀 Iniciar Processamento IA" para começar</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {iaLogs.map((log) => (
+                  <div key={log.id} className={`p-3 rounded text-sm ${getIALogColor(log.status)}`}>
+                    <div className="flex items-start gap-2">
+                      <span className="text-lg">{getIALogIcon(log.status)}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="font-bold text-xs">
+                            {log.licitacao_titulo || log.sre_name || 'IA'}
+                          </span>
+                          <span className="text-xs opacity-75">
+                            {log.timestamp && new Date(log.timestamp).toLocaleTimeString('pt-BR')}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs break-words">{log.message}</p>
+
+                        {/* Detalhes adicionais */}
+                        <div className="mt-1 text-xs opacity-75 flex flex-wrap gap-3">
+                          {log.category && (
+                            <span>📁 {log.category}</span>
+                          )}
+                          {log.priority && (
+                            <span>⚡ {log.priority}</span>
+                          )}
+                          {log.confidence !== undefined && (
+                            <span>📊 {(log.confidence * 100).toFixed(0)}%</span>
+                          )}
+                          {log.processing_time_ms !== undefined && (
+                            <span>⏱️ {Math.round(log.processing_time_ms)}ms</span>
+                          )}
+                          {log.error_message && <span className="text-red-500">Erro: {log.error_message}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div ref={iaLogsEndRef} />
               </div>
             )}
           </div>
