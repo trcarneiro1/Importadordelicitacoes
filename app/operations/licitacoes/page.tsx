@@ -43,6 +43,7 @@ export default function LicitacoesPage() {
         limit: '20',
         sortBy: sortField,
         sortOrder: sortDirection,
+        processedOnly: 'true', // FILTRO: Apenas processadas com IA
         ...(selectedSRE !== 'todas' && { sre: selectedSRE }),
         ...(selectedCategoria !== 'todas' && { categoria: selectedCategoria }),
         ...(selectedSituacao !== 'todas' && { situacao: selectedSituacao }),
